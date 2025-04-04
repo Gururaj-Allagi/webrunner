@@ -16,11 +16,7 @@ import configparser
 import pytest
 from allure_commons.types import AttachmentType
 from selenium import webdriver
-from selenium.common.exceptions import (
-    NoSuchElementException,
-    TimeoutException,
-    WebDriverException
-)
+from selenium.common.exceptions import (NoSuchElementException, TimeoutException, WebDriverException)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
