@@ -1,4 +1,4 @@
-# webrunner or reusable functions
+These functions I have created based on the my experience, which is suitable for any kine of python selenium frameworks
 """
 # WebRunner - Selenium Automation Framework
 
