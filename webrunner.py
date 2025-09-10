@@ -378,6 +378,7 @@ class WebRunner:
                 
                 # Get calling class and method info
                 stack = inspect.stack()
+                
                 caller_frame = stack[1][0]
                 class_name = caller_frame.f_locals['self'].__class__.__name__
                 config_key = f"{class_name}.{function_name}"
