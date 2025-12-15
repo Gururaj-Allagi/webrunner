@@ -1,0 +1,180 @@
+import os
+
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.safari.webdriver import WebDriver as SafariDriver
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager
+
+
+class Browser:
+    """Helper class to create and configure Selenium WebDriver instances.
+
+    Attributes:
+        timeout (int): Default implicit wait applied to created drivers (seconds).
+    """
+    timeout = 30
+
+    def _chrome_options(self, headless=False, download_dir=None):
+        """Construct and return a configured ChromeOptions instance.
+
+        Parameters:
+            headless (bool): If True, enable headless mode for Chrome.
+            download_dir (str|None): If provided, configure Chrome's download directory and
+                related preferences so downloads happen without prompts.
+
+        Returns:
+            selenium.webdriver.ChromeOptions: Configured options object ready to pass to
+            webdriver.Chrome(..., options=opts).
+
+        Notes:
+            - Adds a set of commonly-used flags for stability and performance in CI-like
+              environments (no-sandbox, disable-dev-shm-usage, disable-gpu, etc.).
+            - Uses the modern '--headless=new' flag for recent Chrome versions when
+              headless=True.
+        """
+        opts = webdriver.ChromeOptions()
+        if headless:
+            opts.add_argument("--headless=new")  # modern headless
+        # Common performance/stability flags
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--disable-extensions")
+        opts.add_argument("--disable-infobars")
+        opts.add_argument("--window-size=1920,1080")
+        if download_dir:
+            opts.add_experimental_option("prefs", {
+                "download.default_directory": download_dir,
+                "download.prompt_for_download": False,
+                "download.directory_upgrade": True
+            })
+        return opts
+
+    def _firefox_options(self, headless=False, download_dir=None):
+        """Prepare Firefox options and profile for launching Firefox.
+
+        Parameters:
+            headless (bool): If True, the returned options will enable headless mode.
+            download_dir (str|None): If provided, the returned profile will be configured
+                to download files to this directory without prompting.
+
+        Returns:
+            tuple: (FirefoxOptions, FirefoxProfile) where:
+                - FirefoxOptions is suitable for passing to webdriver.Firefox(..., options=opts)
+                - FirefoxProfile contains download preferences when download_dir is set.
+
+        Notes:
+            - Firefox uses a profile to control download behavior; this helper sets
+              common preferences so automated downloads work reliably.
+        """
+        opts = webdriver.FirefoxOptions()
+        if headless:
+            opts.add_argument("--headless")
+        # Download preferences via profile
+        profile = webdriver.FirefoxProfile()
+        if download_dir:
+            profile.set_preference("browser.download.folderList", 2)
+            profile.set_preference("browser.download.manager.showWhenStarting", False)
+            profile.set_preference("browser.download.dir", download_dir)
+            profile.set_preference("browser.download.useDownloadDir", True)
+            profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "attachment/csv")
+        return opts, profile
+
+    def call_browser(self, browser: str, trace):
+        """Create and return a WebDriver instance based on the provided browser name.
+
+        Parameters:
+            browser (str): Friendly browser name (case-insensitive). Supported values:
+                - 'chrome', 'chrome-headless', 'chrome-headless-linux', 'chrome_debugger'
+                - 'firefox', 'firefox-headless', 'firefox-headless-linux'
+                - 'safari'
+            trace: Optional tracing/logging object passed through to underlying helpers
+                (kept for compatibility with the project's test framework).
+
+        Returns:
+            selenium.webdriver.Remote (or specific WebDriver subclass): an initialized
+            browser instance with implicit waits configured to Browser.timeout.
+
+        Raises:
+            ValueError: If an unsupported browser name is passed.
+
+        Implementation notes:
+            - For Chrome/Firefox this helper uses webdriver-manager to download drivers
+              when a local binary isn't provided. For Linux-specific variants a local
+              driver path is attempted first (see `linux_chromedriver` and
+              `linux_geckodriver`).
+            - Safari uses the system-provided driver; ensure 'Allow Remote Automation'
+              is enabled in Safari's Develop menu when running Safari automation.
+        """
+        name = browser.strip().lower()
+
+        # Resolve common paths
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        linux_chromedriver = os.path.join(root, "libs", "set_up", "chromedriver")
+        linux_geckodriver = os.path.join(root, "libs", "set_up", "geckodriver")
+        download_dir = os.path.join(root, "libs", "set_up", "download_files")
+
+        if name == "chrome":
+            options = self._chrome_options(headless=False)
+            service = ChromeService(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            driver.set_window_size(1920, 1080)
+
+        elif name == "chrome_debugger":
+            options = Options()
+            options.add_experimental_option("debuggerAddress", "localhost:9221")
+            service = Service(executable_path=linux_chromedriver)
+            driver = webdriver.Chrome(service=service, options=options)
+
+        elif name == "chrome-headless":
+            options = self._chrome_options(headless=True)
+            service = ChromeService(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+
+        elif name == "chrome-headless-linux":
+            options = self._chrome_options(headless=True, download_dir=download_dir)
+            service = ChromeService(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=options)
+            driver.set_window_size(1920, 1080)
+
+            # un-comment below code if you required to open chromedriver from specific path
+            # options = self._chrome_options(headless=True, download_dir=download_dir)
+            # if os.path.exists(linux_chromedriver):
+            #     service = Service(executable_path=linux_chromedriver)
+            # else:
+            #     service = ChromeService(ChromeDriverManager().install())
+            # driver = webdriver.Chrome(service=service, options=options)
+            # driver.set_window_size(1920, 1080)
+
+        elif name == "firefox":
+            options, profile = self._firefox_options(headless=False, download_dir=root)
+            service = FirefoxService(GeckoDriverManager().install())
+            driver = webdriver.Firefox(service=service, options=options, firefox_profile=profile)
+
+        elif name == "firefox-headless":
+            options, profile = self._firefox_options(headless=True)
+            service = FirefoxService(GeckoDriverManager().install())
+            driver = webdriver.Firefox(service=service, options=options, firefox_profile=profile)
+
+        elif name == "firefox-headless-linux":
+            options, profile = self._firefox_options(headless=True)
+            if os.path.exists(linux_geckodriver):
+                service = FirefoxService(executable_path=linux_geckodriver)
+            else:
+                service = FirefoxService(GeckoDriverManager().install())
+            driver = webdriver.Firefox(service=service, options=options, firefox_profile=profile)
+
+        elif name == "safari":
+            # Safari uses system driver; ensure 'Allow Remote Automation' in Safari's Develop menu.
+            driver = SafariDriver()
+
+        else:
+            raise ValueError(f"Unsupported browser: {browser}")
+
+        driver.implicitly_wait(self.timeout)
+        return driver
